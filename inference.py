@@ -97,7 +97,7 @@ def class_dir_from_image_path(rel_path: str) -> str:
 # ---------- CLI ----------
 
 def parse_args():
-    p = argparse.ArgumentParser("IP-Adapter Inference (BioCLIP)")
+    p = argparse.ArgumentParser("TaxaAdapter Inference (BioCLIP)")
     p.add_argument("--base_model", default="runwayml/stable-diffusion-v1-5")
     p.add_argument("--vae_model", default="stabilityai/sd-vae-ft-mse")
     p.add_argument("--ckpt", required=True, help="Path to taxa_adapter.bin or taxa_adapter.safetensors")

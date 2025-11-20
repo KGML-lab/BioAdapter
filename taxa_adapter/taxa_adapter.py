@@ -140,18 +140,18 @@ class IPAdapter:
 
     def load_ip_adapter(self):
         if os.path.splitext(self.ip_ckpt)[-1] == ".safetensors":
-            state_dict = {"image_proj": {}, "ip_adapter": {}}
+            state_dict = {"image_proj": {}, "taxa_adapter": {}}
             with safe_open(self.ip_ckpt, framework="pt", device="cpu") as f:
                 for key in f.keys():
                     if key.startswith("image_proj."):
                         state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
-                    elif key.startswith("ip_adapter."):
-                        state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
+                    elif key.startswith("taxa_adapter."):
+                        state_dict["taxa_adapter"][key.replace("taxa_adapter.", "")] = f.get_tensor(key)
         else:
             state_dict = torch.load(self.ip_ckpt, map_location="cpu")
         self.image_proj_model.load_state_dict(state_dict["image_proj"])
         ip_layers = torch.nn.ModuleList(self.pipe.unet.attn_processors.values())
-        ip_layers.load_state_dict(state_dict["ip_adapter"])
+        ip_layers.load_state_dict(state_dict["taxa_adapter"])
 
     @torch.inference_mode()
     def get_image_embeds(self, pil_image=None, clip_image_embeds=None):

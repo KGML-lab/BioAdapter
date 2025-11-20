@@ -38,6 +38,24 @@ accelerate launch --num_processes 4 --multi_gpu --mixed_precision "fp16" train.p
   --model_type="bioclip"
 ```
 
+For training on 1 GPU
+
+```bash
+python train.py \
+  --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
+  --data_json_file="/path/to/train.json" \
+  --data_root_path="/path/to/images" \
+  --mixed_precision="fp16" \
+  --resolution=512 \
+  --train_batch_size=64 \
+  --dataloader_num_workers=8 \
+  --learning_rate=1e-04 \
+  --weight_decay=0.01 \
+  --output_dir="/path/to/output" \
+  --save_steps=2000 \
+  --model_type="bioclip"
+```
+
 ---
 
 ## Converting Checkpoints
