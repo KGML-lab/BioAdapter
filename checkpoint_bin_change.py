@@ -1,13 +1,42 @@
 import os, sys, torch
+import argparse
 from safetensors.torch import load_file, save_file
 from diffusers import UNet2DConditionModel
 
-# --- EDIT THESE ---
-BASE_MODEL = "runwayml/stable-diffusion-v1-5"       # same base you trained with
-CKPT_DIR   = "/fs/ess/PAS2136/bio_diffusion/ip-adapter_runs/bioclip/extra_context4_2gpus/checkpoint-48000/"
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Convert checkpoint to taxa_adapter.bin and taxa_adapter.safetensors"
+    )
+    parser.add_argument(
+        "--ckpt_dir",
+        type=str,
+        required=True,
+        help="Path to checkpoint directory containing model.safetensors"
+    )
+    parser.add_argument(
+        "--base_model",
+        type=str,
+        default="runwayml/stable-diffusion-v1-5",
+        help="Base model used for training (default: runwayml/stable-diffusion-v1-5)"
+    )
+    return parser.parse_args()
+
+# Parse arguments
+args = parse_args()
+BASE_MODEL = args.base_model
+CKPT_DIR   = args.ckpt_dir
 IN_SFT     = os.path.join(CKPT_DIR, "model.safetensors")
-OUT_BIN    = os.path.join(CKPT_DIR, "ip_adapter.bin")
-OUT_SFT    = os.path.join(CKPT_DIR, "ip_adapter.safetensors")
+OUT_BIN    = os.path.join(CKPT_DIR, "taxa_adapter.bin")
+OUT_SFT    = os.path.join(CKPT_DIR, "taxa_adapter.safetensors")
+
+# Validate checkpoint directory
+if not os.path.isdir(CKPT_DIR):
+    sys.exit(f"Error: Checkpoint directory does not exist: {CKPT_DIR}")
+if not os.path.isfile(IN_SFT):
+    sys.exit(f"Error: model.safetensors not found in: {CKPT_DIR}")
+
+print(f"Processing checkpoint: {CKPT_DIR}")
+print(f"Base model: {BASE_MODEL}")
 
 # --- Load saved weights ---
 sd = load_file(IN_SFT, device="cpu")
@@ -49,10 +78,18 @@ if not image_proj_sd or not ip_adapter_sd:
 
 # --- Save nested .bin (your loader's non-safetensors path) ---
 torch.save({"image_proj": image_proj_sd, "ip_adapter": ip_adapter_sd}, OUT_BIN)
-print("Wrote", OUT_BIN)
+print(f"✓ Wrote {OUT_BIN}")
 
 # --- Also save flat .safetensors (your loader's safetensors path) ---
 flat = {f"image_proj.{k}": v for k, v in image_proj_sd.items()}
 flat.update({f"ip_adapter.{k}": v for k, v in ip_adapter_sd.items()})
 save_file(flat, OUT_SFT)
-print("Wrote", OUT_SFT)
+print(f"✓ Wrote {OUT_SFT}")
+
+print(f"\n{'='*60}")
+print(f"Conversion complete!")
+print(f"{'='*60}")
+print(f"Output files:")
+print(f"  - {OUT_BIN}")
+print(f"  - {OUT_SFT}")
+print(f"{'='*60}")
