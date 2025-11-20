@@ -1,0 +1,9 @@
+# Ignore specific OS files
+.DS_Store
+Thumbs.db
+**/__pycache__/
+# Ignore Jupyter notebook checkpoints
+**/.ipynb_checkpoints/
+
+# Ignore slurm files
+slurm*
