@@ -5,13 +5,12 @@ Abstract:
 ---
 
 ## Installation
+Using Python=3.12
 
 ```bash
 # Install dependencies
 pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
-pip install git+https://github.com/imageomics/rshf.git  # For TaxaBind
-
 ```
 
 ### Required Models
@@ -31,9 +30,8 @@ Download the following models before training/inference:
 For training across 4 GPUs
 
 ```
-accelerate launch --num_processes 4 --multi_gpu train.py \
+accelerate launch --num_processes 4 --multi_gpu --mixed_precision "fp16" train.py \
   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
-  --image_encoder_path="/path/to/image_encoder" \
   --data_json_file="/path/to/train.json" \
   --data_root_path="/path/to/images" \
   --mixed_precision="fp16" \
