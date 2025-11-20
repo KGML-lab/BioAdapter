@@ -17,12 +17,12 @@ from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
 
-from ip_adapter.ip_adapter import ImageProjModel
-from ip_adapter.utils import is_torch2_available
+from taxa_adapter.taxa_adapter import ImageProjModel
+from taxa_adapter.utils import is_torch2_available
 if is_torch2_available():
-    from ip_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
+    from taxa_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
 else:
-    from ip_adapter.attention_processor import IPAttnProcessor, AttnProcessor
+    from taxa_adapter.attention_processor import IPAttnProcessor, AttnProcessor
 
 import open_clip
 from transformers import PretrainedConfig
@@ -206,7 +206,6 @@ def parse_args():
         "--image_encoder_path",
         type=str,
         default=None,
-        required=True,
         help="Path to CLIP image encoder",
     )
     parser.add_argument(
@@ -386,9 +385,9 @@ def main():
     elif args.model_type == "clip":
         image_encoder_dim = clip_text_with_proj.config.projection_dim
 
-    print('Training the IP-Adapter with image encoder: ', args.model_type)
+    print('Training the Taxa-Adapter with encoder: ', args.model_type)
     
-    #ip-adapter
+    #taxa-adapter
     image_proj_model = ImageProjModel(
         cross_attention_dim=unet.config.cross_attention_dim,
         clip_embeddings_dim=image_encoder_dim,

@@ -9,8 +9,7 @@ Abstract:
 ```bash
 # Install dependencies
 pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
-pip install torch torchvision diffusers==0.22.1 accelerate
-pip install transformers safetensors open_clip_torch
+pip install -r requirements.txt
 pip install git+https://github.com/imageomics/rshf.git  # For TaxaBind
 
 ```
