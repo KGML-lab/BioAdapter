@@ -100,7 +100,7 @@ def parse_args():
     p = argparse.ArgumentParser("IP-Adapter Inference (BioCLIP)")
     p.add_argument("--base_model", default="runwayml/stable-diffusion-v1-5")
     p.add_argument("--vae_model", default="stabilityai/sd-vae-ft-mse")
-    p.add_argument("--ip_ckpt", required=True, help="Path to ip_adapter.bin or ip_adapter.safetensors")
+    p.add_argument("--ckpt", required=True, help="Path to taxa_adapter.bin or taxa_adapter.safetensors")
 
     # BioCLIP inputs
     # p.add_argument("--taxa", nargs="+", required=True,help="One or more taxonomy strings, e.g. 'Animalia Chordata Aves ...'")
@@ -175,7 +175,7 @@ def main():
         ip_model = IPAdapter(
             pipe,
             image_encoder_path=None,
-            ip_ckpt=args.ip_ckpt,
+            ip_ckpt=args.ckpt,
             device=device,
             model_type=args.model_type,
             bioclip=clip_text_with_proj,
@@ -185,7 +185,7 @@ def main():
         ip_model = IPAdapter(
             pipe,
             image_encoder_path=None,
-            ip_ckpt=args.ip_ckpt,
+            ip_ckpt=args.ckpt,
             device=device,
             model_type=args.model_type,
             bioclip=bioclip_model,

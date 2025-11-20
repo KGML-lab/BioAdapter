@@ -1,6 +1,7 @@
 # TaxaAdapter
 
-Abstract: 
+**Abstract:** Generating images across the Tree of Life is difficult: there are over 10M distinct species on Earth, many of which are highly visually similar.
+Recent work has made progress on this challenging task by utilizing Linnean taxonomic hierarchy information to relate species, but this alone provides weak visual guidance: it is defined by what is genetically related, not necessarily what is visually similar. We posit that taxonomy is most useful for this task when it is additionally and explicitly aligned with visual similarity. Building on recent Vision Taxonomy Models (VTMs), e.g., BioCLIP and TaxaBind, which provide image-aligned embeddings of taxonomic hierarchy, we propose **TaxaAdapter**, a plug-in that injects VTM-derived embeddings into a frozen text-to-image diffusion model via taxonomy-text dual conditioning. Concretely, we feed taxonomy-image-aligned embeddings as an auxiliary control stream, making synthesis taxonomy-aware while preserving CLIP's flexible text prompting capabilities for attributes such as background, pose, and context. Extensive experiments demonstrate that **TaxaAdapter** consistently improves morphology fidelity and species-identity accuracy over strong baselines, with a cleaner architecture and training recipe. Our results show that coupling diffusion models with pretrained VTMs closes the gap between taxonomic hierarchy and visual similarity between species and offers a practical route to scalable, fine-grained species synthesis. 
 
 ---
 
@@ -13,14 +14,6 @@ pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https
 pip install -r requirements.txt
 ```
 
-### Required Models
-
-Download the following models before training/inference:
-- [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
-- [stabilityai/sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse)
-- BioCLIP-2: `hf-hub:imageomics/bioclip-2` (auto-downloaded)
-- TaxaBind config: `MVRL/taxabind-config` (auto-downloaded)
-
 ---
 
 ## Training
@@ -29,7 +22,7 @@ Download the following models before training/inference:
 
 For training across 4 GPUs
 
-```
+```bash
 accelerate launch --num_processes 4 --multi_gpu --mixed_precision "fp16" train.py \
   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
   --data_json_file="/path/to/train.json" \
@@ -37,7 +30,7 @@ accelerate launch --num_processes 4 --multi_gpu --mixed_precision "fp16" train.p
   --mixed_precision="fp16" \
   --resolution=512 \
   --train_batch_size=64 \
-  --dataloader_num_workers=4 \
+  --dataloader_num_workers=8 \
   --learning_rate=1e-04 \
   --weight_decay=0.01 \
   --output_dir="/path/to/output" \
@@ -70,17 +63,13 @@ Both formats are compatible with the inference script.
 
 ```bash
 python inference.py \
-  --base_model="runwayml/stable-diffusion-v1-5" \
-  --vae_model="stabilityai/sd-vae-ft-mse" \
-  --ip_ckpt="/path/to/checkpoint/taxa_adapter.bin" \
+  --ckpt="/path/to/checkpoint/taxa_adapter.bin" \
   --json_file="/path/to/test.json" \
   --model_type="bioclip" \
   --dataset="inat" \
   --num_samples=10 \
   --steps=50 \
   --guidance_scale=3.5 \
-  --seed=42 \
-  --out_dir="outputs" \
-  --num_tokens=4
+  --out_dir="/path/to/output"
 ```
 
