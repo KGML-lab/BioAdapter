@@ -140,13 +140,12 @@ def main():
 
     config = PretrainedConfig.from_pretrained("MVRL/taxabind-config")
     taxabind = TaxaBind(config)
-    location_encoder = taxabind.get_location_encoder().eval()
     taxabind_image_text_model   = taxabind.get_image_text_encoder().eval()
     taxabind_tokenizer = taxabind.get_tokenizer()   
 
     if args.model_type == "bioclip":
         tokenizer = bioclip_tok
-    elif args.model_type == "taxabind" or args.model_type == "taxa_loc_seq_concat" or args.model_type == "loc_taxa_seq_concat":
+    elif args.model_type == "taxabind":
         tokenizer = taxabind_tokenizer
     elif args.model_type == "clip":
         clip_ckpt = "openai/clip-vit-large-patch14"
@@ -180,8 +179,7 @@ def main():
             device=device,
             model_type=args.model_type,
             bioclip=clip_text_with_proj,
-            taxabind=taxabind_image_text_model,
-            location_encoder=location_encoder
+            taxabind=taxabind_image_text_model
         )
     else:
         ip_model = IPAdapter(
@@ -191,13 +189,11 @@ def main():
             device=device,
             model_type=args.model_type,
             bioclip=bioclip_model,
-            taxabind=taxabind_image_text_model,
-            location_encoder=location_encoder
+            taxabind=taxabind_image_text_model
         )
 
     for idx, entry in tqdm(enumerate(unique_items, start=1), total=len(unique_items)):
         taxa_name = entry["taxonomic_name"]
-        location = torch.tensor([entry["latitude"], entry["longitude"]])
 
         if args.levels < 7:
             taxa_parts = taxa_name.split(" ")
@@ -217,8 +213,6 @@ def main():
 
         if args.model_type == "bioclip" or args.model_type == "taxabind":
             tokens = tokenizer(taxa_name).to(device)
-        elif args.model_type == "location":
-            tokens = location.unsqueeze(0).to(device)
         elif args.model_type == "clip":
             tokens = tokenizer(
                 taxa_name,
@@ -228,10 +222,6 @@ def main():
                 return_tensors="pt"
             ).input_ids
             tokens = tokens.to(device)
-        elif args.model_type == "taxa_loc_seq_concat" or args.model_type == "loc_taxa_seq_concat":
-            taxa_tokens = tokenizer(taxa_name).to(device)
-            location = location.unsqueeze(0).to(device)
-            tokens = (taxa_tokens, location)
 
         # Generate images
         if args.taxonomic_prompt:
@@ -256,7 +246,6 @@ def main():
         else:
             save_images_per_class(images, save_dir, class_dir)
         
-        # print(f"[{idx}/{len(unique_items[:20])}] {taxa_name}")
         print(f"    Saved {len(images)} images -> {save_dir}")
 
     print("Done.")
@@ -264,6 +253,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# python inference.py --ip_ckpt <path>/ip_adapter.bin --json_file <train_json> --out_dir /scratch/bio_diffusion/ip-adapter_runs/samples/<run> --num_samples 10 --model_type bioclip

@@ -60,9 +60,6 @@ class MyDataset(torch.utils.data.Dataset):
         text = item["text"]
         image_file = item["image_file"]
         taxonomic_name = item["taxonomic_name"]
-        latitude = item['latitude']
-        longitude = item['longitude']
-        location = [latitude, longitude]
 
         # read image
         raw_image = Image.open(os.path.join(self.image_root_path, image_file))
@@ -107,7 +104,6 @@ class MyDataset(torch.utils.data.Dataset):
             "clip_image": clip_image,
             "drop_image_embed": drop_image_embed,
             "taxa_tokenized": taxa_tokenized,
-            "location": torch.tensor(location),
             "taxabind_tokenized": taxabind_tokenized
         }
 
@@ -121,7 +117,6 @@ def collate_fn(data):
     taxa_tokenized = torch.cat([example["taxa_tokenized"] for example in data], dim=0)
     clip_images = torch.cat([example["clip_image"] for example in data], dim=0)
     drop_image_embeds = [example["drop_image_embed"] for example in data]
-    location = torch.stack([example["location"] for example in data], dim=0)
     taxabind_tokenized = torch.cat([example["taxabind_tokenized"] for example in data], dim=0)
 
     return {
@@ -130,7 +125,6 @@ def collate_fn(data):
         "clip_images": clip_images,
         "drop_image_embeds": drop_image_embeds,
         "taxa_tokenized": taxa_tokenized,
-        "location": location,
         "taxabind_tokenized": taxabind_tokenized
     }
     
@@ -361,7 +355,6 @@ def main():
 
     config = PretrainedConfig.from_pretrained("MVRL/taxabind-config")
     taxabind = TaxaBind(config)
-    location_encoder = taxabind.get_location_encoder()
     taxabind_image_text_model   = taxabind.get_image_text_encoder()  # open_clip model
     taxabind_tokenizer = taxabind.get_tokenizer()   
 
@@ -378,7 +371,6 @@ def main():
     image_encoder.requires_grad_(False)
     
     bioclip.requires_grad_(False)
-    location_encoder.requires_grad_(False).eval()
     taxabind_image_text_model.requires_grad_(False).eval()
     if args.image_encoder == "clip":
         clip_text_with_proj.requires_grad_(False)
@@ -387,13 +379,8 @@ def main():
     if args.image_encoder == "image":
         image_encoder_dim = image_encoder.config.projection_dim
     elif args.image_encoder == "bioclip":
-        # image_encoder_dim = bioclip.text_projection.shape[1]
         image_encoder_dim = 768
     elif args.image_encoder == "taxabind":
-        # image_encoder_dim = location_encoder.config.hidden_size
-        image_encoder_dim = 512
-    elif args.image_encoder == "location":
-        # image_encoder_dim = location_encoder.config.hidden_size
         image_encoder_dim = 512
     elif args.image_encoder == "clip":
         image_encoder_dim = clip_text_with_proj.config.projection_dim
@@ -403,7 +390,6 @@ def main():
     #ip-adapter
     image_proj_model = ImageProjModel(
         cross_attention_dim=unet.config.cross_attention_dim,
-        # clip_embeddings_dim=image_encoder.config.projection_dim, # TODO: change this for bioclip
         clip_embeddings_dim=image_encoder_dim,
         clip_extra_context_tokens=args.clip_extra_context_tokens,
     )
@@ -445,7 +431,6 @@ def main():
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     image_encoder.to(accelerator.device, dtype=weight_dtype)
     bioclip.to(accelerator.device, dtype=weight_dtype)
-    location_encoder.to(accelerator.device, dtype=torch.float32) # location encoder in fp32 as it is small
     taxabind_image_text_model.to(accelerator.device, dtype=torch.float32)
 
     if args.image_encoder == "clip":
@@ -497,9 +482,7 @@ def main():
                     if args.image_encoder == "image":
                         image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
                     elif args.image_encoder == "bioclip":
-                        image_embeds = bioclip.encode_text(batch["taxa_tokenized"].to(accelerator.device))
-                    elif args.image_encoder == "location":
-                        image_embeds = location_encoder(batch["location"].to(accelerator.device))  
+                        image_embeds = bioclip.encode_text(batch["taxa_tokenized"].to(accelerator.device)) 
                     elif args.image_encoder == "taxabind":
                         image_embeds = taxabind_image_text_model.encode_text(batch["taxabind_tokenized"].to(accelerator.device))
                     elif args.image_encoder == "clip":
@@ -541,6 +524,4 @@ def main():
             begin = time.perf_counter()
                 
 if __name__ == "__main__":
-    main()    
-
-# python tutorial_train.py   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5"   --image_encoder_path="/users/PAS2136/mridul/scratchpad/taxabind/IP-Adapter/models/image_encoder"   --data_json_file="/fs/ess/PAS2136/bio_diffusion/data/inat/images/train_mini_birds.json"   --data_root_path="/fs/ess/PAS2136/bio_diffusion/data/inat/images"   --mixed_precision="fp16"   --resolution=512   --train_batch_size=64   --dataloader_num_workers=4   --learning_rate=1e-04   --weight_decay=0.01   --output_dir="/fs/ess/PAS2136/bio_diffusion/test_runs/ip-adapter"   --save_steps=10000
+    main()
