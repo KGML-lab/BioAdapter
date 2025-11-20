@@ -51,21 +51,19 @@ unet_ref = UNet2DConditionModel.from_pretrained(BASE_MODEL, subfolder="unet")
 names_ordered = list(unet_ref.attn_processors.keys())
 bases = [n[:-len(".processor")] if n.endswith(".processor") else n for n in names_ordered]
 
-# IP weights are stored under: unet.<base>.processor.to_{k,v}_ip.weight
-ip_adapter_sd = {}
+taxa_adapter_sd = {}
 missing_cnt = 0
 for idx, base in enumerate(bases):
     k_key = f"unet.{base}.processor.to_k_ip.weight"
     v_key = f"unet.{base}.processor.to_v_ip.weight"
     if k_key in sd and v_key in sd:
-        ip_adapter_sd[f"{idx}.to_k_ip.weight"] = sd[k_key]
-        ip_adapter_sd[f"{idx}.to_v_ip.weight"] = sd[v_key]
+        taxa_adapter_sd[f"{idx}.to_k_ip.weight"] = sd[k_key]
+        taxa_adapter_sd[f"{idx}.to_v_ip.weight"] = sd[v_key]
     else:
-        # many attn1 (self-attn) layers don't have IP params — that's fine
         missing_cnt += 1
 
-print("ip-adapter param tensors:", len(ip_adapter_sd), "(layers without IP weights:", missing_cnt, ")")
-if not image_proj_sd or not ip_adapter_sd:
+print("taxa-adapter param tensors:", len(taxa_adapter_sd), "(layers without IP weights:", missing_cnt, ")")
+if not image_proj_sd or not taxa_adapter_sd:
     # help you debug prefixes quickly
     print("\nExample keys containing 'processor' or 'image_proj_model':")
     shown = 0
@@ -77,12 +75,12 @@ if not image_proj_sd or not ip_adapter_sd:
     sys.exit("No params found; adjust prefixes or BASE_MODEL/CKPT_DIR.")
 
 # --- Save nested .bin (your loader's non-safetensors path) ---
-torch.save({"image_proj": image_proj_sd, "ip_adapter": ip_adapter_sd}, OUT_BIN)
+torch.save({"image_proj": image_proj_sd, "taxa_adapter": taxa_adapter_sd}, OUT_BIN)
 print(f"✓ Wrote {OUT_BIN}")
 
 # --- Also save flat .safetensors (your loader's safetensors path) ---
 flat = {f"image_proj.{k}": v for k, v in image_proj_sd.items()}
-flat.update({f"ip_adapter.{k}": v for k, v in ip_adapter_sd.items()})
+flat.update({f"taxa_adapter.{k}": v for k, v in taxa_adapter_sd.items()})
 save_file(flat, OUT_SFT)
 print(f"✓ Wrote {OUT_SFT}")
 

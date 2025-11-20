@@ -12,7 +12,7 @@ from rshf.taxabind import TaxaBind
 
 # import your improved class (the one we discussed that supports model_type='bioclip'
 # and accepts bioclip tokens / taxa_texts)
-from ip_adapter import IPAdapter
+from taxa_adapter import IPAdapter
 from tqdm import tqdm
 import json
 from transformers import CLIPTokenizer, CLIPTextModelWithProjection
