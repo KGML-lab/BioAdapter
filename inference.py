@@ -119,7 +119,7 @@ def parse_args():
     
 
     p.add_argument("--json_file", required=True, help="Path to JSON list of dicts.")
-    p.add_argument("--model_type", type=str, default="bioclip", choices=["bioclip", "taxabind", "location", "clip", "taxa_loc_seq_concat", "loc_taxa_seq_concat"], help="Which model type was used during IP-Adapter training?")
+    p.add_argument("--model_type", type=str, default="bioclip", choices=["bioclip", "taxabind", "location", "clip", "taxa_loc_seq_concat", "loc_taxa_seq_concat", "bioclip_clip"], help="Which model type was used during IP-Adapter training?")
     p.add_argument("--dataset", type=str, default="inat", choices=["inat", "fishnet"], help="Dataset type: 'inat' uses folder from image path, 'fishnet' uses taxonomic name")
     return p.parse_args()
 
@@ -152,6 +152,11 @@ def main():
         clip_ckpt = "openai/clip-vit-large-patch14"
         tokenizer  = CLIPTokenizer.from_pretrained(clip_ckpt)
         clip_text_with_proj = CLIPTextModelWithProjection.from_pretrained(clip_ckpt).eval()
+    elif args.model_type == "bioclip_clip":
+        clip_ckpt = "openai/clip-vit-large-patch14"
+        tokenizer  = CLIPTokenizer.from_pretrained(clip_ckpt)
+        clip_text_with_proj = CLIPTextModelWithProjection.from_pretrained(clip_ckpt).eval()
+        bioclip_tokenizer = bioclip_tok
 
     # Load JSON
     with open(args.json_file, "r") as f:
@@ -181,6 +186,18 @@ def main():
             model_type=args.model_type,
             bioclip=clip_text_with_proj,
             taxabind=taxabind_image_text_model,
+            location_encoder=location_encoder
+        )
+    elif args.model_type == "bioclip_clip":
+        print("Using BioCLIP + CLIP model for IP-Adapter...")
+        ip_model = IPAdapter(
+            pipe,
+            image_encoder_path=None,
+            ip_ckpt=args.ip_ckpt,
+            device=device,
+            model_type=args.model_type,
+            bioclip=bioclip_model,
+            taxabind=clip_text_with_proj,
             location_encoder=location_encoder
         )
     else:
@@ -232,6 +249,17 @@ def main():
             taxa_tokens = tokenizer(taxa_name).to(device)
             location = location.unsqueeze(0).to(device)
             tokens = (taxa_tokens, location)
+        elif args.model_type == "bioclip_clip":
+            bioclip_tokens = bioclip_tokenizer(taxa_name).to(device)
+            clip_tokens = tokenizer(
+                taxa_name,
+                max_length=tokenizer.model_max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            ).input_ids
+            clip_tokens = clip_tokens.to(device)
+            tokens = (bioclip_tokens, clip_tokens)
 
         # Generate images
         if args.taxonomic_prompt:

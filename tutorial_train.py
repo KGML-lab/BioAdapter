@@ -16,6 +16,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
+from transformers import AutoTokenizer, AutoModel
 
 from ip_adapter.ip_adapter import ImageProjModel
 from ip_adapter.utils import is_torch2_available
@@ -314,12 +315,17 @@ def parse_args():
 
 
     parser.add_argument(
-        "--image_encoder",
+        "--model_type",
         type=str,
         default="bioclip",
-        help=(
-            "The type of image encoder to use: clip or bioclip"
-        ),
+        choices=[
+            "image",
+            "bioclip",
+            "taxabind",
+            "location",
+            "clip",
+        ],
+        help=("The type of image encoder to use."),
     )
 
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
@@ -362,11 +368,11 @@ def main():
     config = PretrainedConfig.from_pretrained("MVRL/taxabind-config")
     taxabind = TaxaBind(config)
     location_encoder = taxabind.get_location_encoder()
-    taxabind_image_text_model   = taxabind.get_image_text_encoder()  # open_clip model
+    taxabind_image_text_model   = taxabind.get_image_text_encoder()
     taxabind_tokenizer = taxabind.get_tokenizer()   
 
-    if args.image_encoder == "clip":
-        clip_ckpt = "openai/clip-vit-large-patch14"   # matches SD 1.x
+    if args.model_type == "clip":
+        clip_ckpt = "openai/clip-vit-large-patch14"   # matches SD
         clip_text_with_proj_tokenizer  = CLIPTokenizer.from_pretrained(clip_ckpt)
         clip_text_with_proj = CLIPTextModelWithProjection.from_pretrained(clip_ckpt).eval()
     
@@ -380,30 +386,26 @@ def main():
     bioclip.requires_grad_(False)
     location_encoder.requires_grad_(False).eval()
     taxabind_image_text_model.requires_grad_(False).eval()
-    if args.image_encoder == "clip":
+    if args.model_type == "clip":
         clip_text_with_proj.requires_grad_(False)
 
 
-    if args.image_encoder == "image":
-        image_encoder_dim = image_encoder.config.projection_dim
-    elif args.image_encoder == "bioclip":
-        # image_encoder_dim = bioclip.text_projection.shape[1]
-        image_encoder_dim = 768
-    elif args.image_encoder == "taxabind":
-        # image_encoder_dim = location_encoder.config.hidden_size
-        image_encoder_dim = 512
-    elif args.image_encoder == "location":
-        # image_encoder_dim = location_encoder.config.hidden_size
-        image_encoder_dim = 512
-    elif args.image_encoder == "clip":
+    if args.model_type == "image":
+        image_encoder_dim = image_encoder.config.projection_dim # 1024
+    elif args.model_type == "bioclip":
+        image_encoder_dim = bioclip.text_projection.shape[1]    # 768
+    elif args.model_type == "taxabind":
+        image_encoder_dim = taxabind_image_text_model.text_projection.shape[1]  # 512
+    elif args.model_type == "location":
+        image_encoder_dim = location_encoder.config.dim # 512
+    elif args.model_type == "clip":
         image_encoder_dim = clip_text_with_proj.config.projection_dim
 
-    print('Training the IP-Adapter with image encoder: ', args.image_encoder)
+    print('Training the IP-Adapter with image encoder: ', args.model_type)
     
     #ip-adapter
     image_proj_model = ImageProjModel(
         cross_attention_dim=unet.config.cross_attention_dim,
-        # clip_embeddings_dim=image_encoder.config.projection_dim, # TODO: change this for bioclip
         clip_embeddings_dim=image_encoder_dim,
         clip_extra_context_tokens=args.clip_extra_context_tokens,
     )
@@ -448,7 +450,7 @@ def main():
     location_encoder.to(accelerator.device, dtype=torch.float32) # location encoder in fp32 as it is small
     taxabind_image_text_model.to(accelerator.device, dtype=torch.float32)
 
-    if args.image_encoder == "clip":
+    if args.model_type == "clip":
         clip_text_with_proj.to(accelerator.device, dtype=weight_dtype)
     
     # optimizer
@@ -456,7 +458,7 @@ def main():
     optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
     
     # dataloader
-    if args.image_encoder == "clip":
+    if args.model_type == "clip":
         train_dataset = MyDataset(args.data_json_file, tokenizer=tokenizer, size=args.resolution, image_root_path=args.data_root_path, bioclip_tokenizer=clip_text_with_proj_tokenizer, taxabind_tokenizer=taxabind_tokenizer, model_type="clip")
     else:
         train_dataset = MyDataset(args.data_json_file, tokenizer=tokenizer, size=args.resolution, image_root_path=args.data_root_path, bioclip_tokenizer=bioclip_tokenizer, taxabind_tokenizer=taxabind_tokenizer)
@@ -494,15 +496,15 @@ def main():
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
             
                 with torch.no_grad():
-                    if args.image_encoder == "image":
+                    if args.model_type == "image":
                         image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
-                    elif args.image_encoder == "bioclip":
+                    elif args.model_type == "bioclip":
                         image_embeds = bioclip.encode_text(batch["taxa_tokenized"].to(accelerator.device))
-                    elif args.image_encoder == "location":
+                    elif args.model_type == "location":
                         image_embeds = location_encoder(batch["location"].to(accelerator.device))  
-                    elif args.image_encoder == "taxabind":
+                    elif args.model_type == "taxabind":
                         image_embeds = taxabind_image_text_model.encode_text(batch["taxabind_tokenized"].to(accelerator.device))
-                    elif args.image_encoder == "clip":
+                    elif args.model_type == "clip":
                         image_embeds = clip_text_with_proj(batch["taxa_tokenized"].to(accelerator.device))[0]
 
                 image_embeds_ = []

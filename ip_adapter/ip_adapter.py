@@ -90,6 +90,9 @@ class IPAdapter:
             self.image_encoder = self.taxabind
         elif model_type == 'location':
             self.image_encoder = self.location_encoder
+        elif self.model_type == 'bioclip_clip':
+            self.image_encoder = self.bioclip
+
 
         self.clip_image_processor = CLIPImageProcessor()
         # image proj model
@@ -101,14 +104,13 @@ class IPAdapter:
         if self.model_type == "image" or self.model_type == "clip":
             image_encoder_dim = self.image_encoder.config.projection_dim
         elif self.model_type == "bioclip":
-            # image_encoder_dim = bioclip.text_projection.shape[1]
             image_encoder_dim = 768
         elif self.model_type == "taxabind":
-            # image_encoder_dim = location_encoder.config.hidden_size
             image_encoder_dim = 512
         elif self.model_type == "location":
-            # image_encoder_dim = location_encoder.config.hidden_size
             image_encoder_dim = 512
+        elif self.model_type == 'bioclip_clip':
+            image_encoder_dim = 768
 
         image_proj_model = ImageProjModel(
             cross_attention_dim=self.pipe.unet.config.cross_attention_dim,
@@ -191,6 +193,13 @@ class IPAdapter:
             text_emb = self.image_encoder(pil_image)[0]
             image_prompt_embeds = self.image_proj_model(text_emb)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(text_emb))
+        elif self.model_type == 'bioclip_clip':
+            # pil_image -> (bioclip_tokens, clip_tokens) 
+            text_emb_bioclip = self.bioclip.encode_text(pil_image[0])
+            text_emb_clip = self.taxabind(pil_image[1])[0]
+            text_emb = text_emb_bioclip + text_emb_clip
+            image_prompt_embeds = self.image_proj_model(text_emb)
+            uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(text_emb))
 
 
         return image_prompt_embeds, uncond_image_prompt_embeds
@@ -216,7 +225,10 @@ class IPAdapter:
         self.set_scale(scale)
 
         if pil_image is not None:
-            num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
+            if self.model_type in ['taxa_loc_seq_concat', 'loc_taxa_seq_concat', 'bioclip_clip']:
+                num_prompts = 1
+            else:
+                num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
         else:
             num_prompts = clip_image_embeds.size(0)
 
