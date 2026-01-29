@@ -290,9 +290,23 @@ def restore_processors(ip_model, original_processors):
 # ---------- Visualization Functions ----------
 
 def create_attention_heatmap(attention: torch.Tensor, image: Image.Image,
-                            token_idx: int, alpha: float = 0.6) -> tuple:
-    """Overlay attention heatmap on image."""
-    attn = attention[token_idx].numpy()
+                            token_idx: int = None, alpha: float = 0.6) -> tuple:
+    """Overlay attention heatmap on image.
+
+    Args:
+        attention: Tensor of shape (num_tokens, H, W) or (H, W)
+        image: PIL Image
+        token_idx: If provided, use specific token. If None, use averaged attention.
+        alpha: Transparency of overlay
+    """
+    if token_idx is not None:
+        attn = attention[token_idx].numpy()
+    elif attention.dim() == 3:
+        # Average across all tokens
+        attn = attention.mean(dim=0).numpy()
+    else:
+        attn = attention.numpy()
+
     attn = (attn - attn.min()) / (attn.max() - attn.min() + 1e-8)
 
     img_size = image.size
@@ -309,13 +323,54 @@ def create_attention_heatmap(attention: torch.Tensor, image: Image.Image,
     return blended, attn_resized
 
 
-def visualize_all_tokens(image: Image.Image, attention: torch.Tensor,
-                        taxonomy_name: str, save_path: str, num_tokens: int = 4):
-    """Create a visualization grid showing attention for each token."""
+def visualize_averaged_attention(image: Image.Image, attention: torch.Tensor,
+                                taxonomy_name: str, save_path: str):
+    """Create a clean visualization showing AVERAGED attention across all tokens."""
     tax_levels = taxonomy_name.split()
     level_names = ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
 
-    fig, axes = plt.subplots(2, num_tokens + 1, figsize=(4 * (num_tokens + 1), 8))
+    # Average attention across all tokens
+    avg_attention = attention.mean(dim=0)  # (H, W)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Original image
+    axes[0].imshow(image)
+    axes[0].set_title('Generated Image', fontsize=14, fontweight='bold')
+    axes[0].axis('off')
+
+    # Attention overlay
+    blended, attn_raw = create_attention_heatmap(attention, image, token_idx=None, alpha=0.5)
+    axes[1].imshow(blended)
+    axes[1].set_title('Attention Overlay', fontsize=14, fontweight='bold')
+    axes[1].axis('off')
+
+    # Raw attention map
+    im = axes[2].imshow(attn_raw, cmap='jet')
+    axes[2].set_title('Cross-Attention Map\n(averaged over 4 tokens)', fontsize=12, fontweight='bold')
+    axes[2].axis('off')
+    plt.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
+
+    # Add taxonomy info as text below
+    tax_text = ' → '.join(tax_levels)
+    if len(tax_text) > 80:
+        # Wrap long taxonomy
+        tax_text = ' → '.join(tax_levels[:4]) + '\n→ ' + ' → '.join(tax_levels[4:])
+
+    plt.suptitle(f'Cross-Attention Visualization\n{tax_text}',
+                fontsize=12, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def visualize_all_tokens(image: Image.Image, attention: torch.Tensor,
+                        taxonomy_name: str, save_path: str, num_tokens: int = 4):
+    """Create a visualization grid showing attention for each token AND the average."""
+    tax_levels = taxonomy_name.split()
+    level_names = ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+
+    fig, axes = plt.subplots(2, num_tokens + 2, figsize=(4 * (num_tokens + 2), 8))
 
     # Original image
     axes[0, 0].imshow(image)
@@ -330,17 +385,28 @@ def visualize_all_tokens(image: Image.Image, attention: torch.Tensor,
     axes[1, 0].set_title('Taxonomy', fontsize=12, fontweight='bold')
     axes[1, 0].axis('off')
 
-    # Attention maps for each token
-    for i in range(num_tokens):
-        blended, attn_raw = create_attention_heatmap(attention, image, i)
-        axes[0, i + 1].imshow(blended)
-        axes[0, i + 1].set_title(f'Token {i + 1}', fontsize=12, fontweight='bold')
-        axes[0, i + 1].axis('off')
+    # AVERAGED attention (most important!)
+    blended_avg, attn_avg = create_attention_heatmap(attention, image, token_idx=None, alpha=0.5)
+    axes[0, 1].imshow(blended_avg)
+    axes[0, 1].set_title('AVERAGED\n(All Tokens)', fontsize=12, fontweight='bold', color='red')
+    axes[0, 1].axis('off')
 
-        im = axes[1, i + 1].imshow(attn_raw, cmap='jet')
-        axes[1, i + 1].set_title(f'Attention Map {i + 1}', fontsize=10)
-        axes[1, i + 1].axis('off')
-        plt.colorbar(im, ax=axes[1, i + 1], fraction=0.046, pad=0.04)
+    im_avg = axes[1, 1].imshow(attn_avg, cmap='jet')
+    axes[1, 1].set_title('Avg Attention Map', fontsize=10, fontweight='bold', color='red')
+    axes[1, 1].axis('off')
+    plt.colorbar(im_avg, ax=axes[1, 1], fraction=0.046, pad=0.04)
+
+    # Individual token attention maps
+    for i in range(num_tokens):
+        blended, attn_raw = create_attention_heatmap(attention, image, token_idx=i)
+        axes[0, i + 2].imshow(blended)
+        axes[0, i + 2].set_title(f'Token {i + 1}', fontsize=12)
+        axes[0, i + 2].axis('off')
+
+        im = axes[1, i + 2].imshow(attn_raw, cmap='jet')
+        axes[1, i + 2].set_title(f'Attention {i + 1}', fontsize=10)
+        axes[1, i + 2].axis('off')
+        plt.colorbar(im, ax=axes[1, i + 2], fraction=0.046, pad=0.04)
 
     plt.suptitle(f'Cross-Attention Visualization\n{taxonomy_name}',
                 fontsize=14, fontweight='bold')
@@ -349,47 +415,45 @@ def visualize_all_tokens(image: Image.Image, attention: torch.Tensor,
     plt.close()
 
 
-def create_per_level_visualization(image: Image.Image, attention: torch.Tensor,
+def create_clean_attention_figure(image: Image.Image, attention: torch.Tensor,
                                   taxonomy_name: str, save_path: str):
-    """Create visualization mapping tokens to potential taxonomic meanings."""
+    """Create a publication-ready figure with just image and averaged attention."""
+    # Average attention across all tokens
+    avg_attn = attention.mean(dim=0).numpy()
+    avg_attn = (avg_attn - avg_attn.min()) / (avg_attn.max() - avg_attn.min() + 1e-8)
+
+    # Resize to image size
+    img_size = image.size
+    attn_resized = Image.fromarray((avg_attn * 255).astype(np.uint8))
+    attn_resized = attn_resized.resize(img_size, Image.BILINEAR)
+    attn_resized = np.array(attn_resized) / 255.0
+
+    # Create heatmap overlay
+    cmap = cm.get_cmap('jet')
+    heatmap = cmap(attn_resized)[:, :, :3]
+    heatmap = (heatmap * 255).astype(np.uint8)
+    heatmap_img = Image.fromarray(heatmap)
+    blended = Image.blend(image.convert('RGB'), heatmap_img, 0.5)
+
+    # Parse taxonomy
     tax_levels = taxonomy_name.split()
-    level_names = ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-    num_tokens = attention.shape[0]
+    species_name = f"{tax_levels[-2]} {tax_levels[-1]}" if len(tax_levels) >= 2 else taxonomy_name
 
-    fig = plt.figure(figsize=(16, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-    # Main image
-    ax_main = fig.add_axes([0.05, 0.35, 0.25, 0.55])
-    ax_main.imshow(image)
-    ax_main.set_title('Generated Image', fontsize=12, fontweight='bold')
-    ax_main.axis('off')
+    axes[0].imshow(image)
+    axes[0].set_title(f'Generated: {species_name}', fontsize=12)
+    axes[0].axis('off')
 
-    # Taxonomy hierarchy
-    ax_tax = fig.add_axes([0.05, 0.05, 0.25, 0.25])
-    hierarchy_text = "Taxonomic Hierarchy:\n" + "\n".join(
-        [f"  {level_names[i]}: {tax_levels[i]}" for i in range(min(len(tax_levels), len(level_names)))]
-    )
-    ax_tax.text(0.05, 0.95, hierarchy_text, fontsize=9, verticalalignment='top',
-               family='monospace', transform=ax_tax.transAxes)
-    ax_tax.axis('off')
+    axes[1].imshow(blended)
+    axes[1].set_title('Cross-Attention Map', fontsize=12)
+    axes[1].axis('off')
 
-    # Attention maps in a grid
-    for i in range(num_tokens):
-        row = i // 2
-        col = i % 2
-        ax = fig.add_axes([0.35 + col * 0.32, 0.55 - row * 0.45, 0.28, 0.38])
-
-        blended, _ = create_attention_heatmap(attention, image, i, alpha=0.5)
-        ax.imshow(blended)
-
-        potential_meaning = f"Token {i+1}\n(Higher-level)" if i < 2 else f"Token {i+1}\n(Fine-grained)"
-        ax.set_title(potential_meaning, fontsize=10, fontweight='bold')
-        ax.axis('off')
-
-    plt.suptitle(f'Cross-Attention Analysis: {" ".join(tax_levels[-2:])}',
-                fontsize=14, fontweight='bold')
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
+
+    return blended
 
 
 # ---------- Utilities ----------
@@ -621,31 +685,40 @@ def main():
         # Save generated image
         image.save(os.path.join(sample_dir, "generated.png"))
 
-        # Create visualizations
+        # PRIMARY: Clean averaged attention visualization (recommended for paper)
+        visualize_averaged_attention(
+            image, attention, taxa_name,
+            os.path.join(sample_dir, "attention_averaged.png")
+        )
+
+        # Publication-ready figure (just image + attention side by side)
+        blended_avg = create_clean_attention_figure(
+            image, attention, taxa_name,
+            os.path.join(sample_dir, "attention_figure.png")
+        )
+
+        # Save just the averaged attention overlay
+        blended_avg, attn_avg = create_attention_heatmap(attention, image, token_idx=None, alpha=0.5)
+        blended_avg.save(os.path.join(sample_dir, "attention_overlay_averaged.png"))
+
+        # Save raw averaged attention map
+        avg_attn = attention.mean(dim=0).numpy()
+        avg_attn_norm = (avg_attn - avg_attn.min()) / (avg_attn.max() - avg_attn.min() + 1e-8)
+        plt.figure(figsize=(6, 6))
+        plt.imshow(avg_attn_norm, cmap='jet')
+        plt.colorbar(label='Attention')
+        plt.title('Cross-Attention (Averaged)')
+        plt.axis('off')
+        plt.savefig(os.path.join(sample_dir, "attention_raw_averaged.png"),
+                   dpi=150, bbox_inches='tight')
+        plt.close()
+
+        # OPTIONAL: All tokens visualization (for debugging/appendix)
         visualize_all_tokens(
             image, attention, taxa_name,
             os.path.join(sample_dir, "attention_all_tokens.png"),
             num_tokens=args.num_tokens
         )
-
-        create_per_level_visualization(
-            image, attention, taxa_name,
-            os.path.join(sample_dir, "attention_per_level.png")
-        )
-
-        # Individual token heatmaps
-        for token_idx in range(args.num_tokens):
-            blended, attn_raw = create_attention_heatmap(attention, image, token_idx)
-            blended.save(os.path.join(sample_dir, f"attention_token_{token_idx+1}_overlay.png"))
-
-            plt.figure(figsize=(6, 6))
-            plt.imshow(attn_raw, cmap='jet')
-            plt.colorbar()
-            plt.title(f'Token {token_idx+1} Attention')
-            plt.axis('off')
-            plt.savefig(os.path.join(sample_dir, f"attention_token_{token_idx+1}_raw.png"),
-                       dpi=150, bbox_inches='tight')
-            plt.close()
 
         print(f"  Saved visualizations for: {taxa_name}")
 

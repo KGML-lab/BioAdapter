@@ -509,10 +509,54 @@ def create_heatmap_overlay_grid(image: Image.Image, attentions_by_level: Dict[in
             ax.set_title(f'{TAXONOMIC_LEVELS[level-1]}\n({tax_parts[level-1]})', fontsize=9)
         ax.axis('off')
 
-    plt.suptitle(f'Attention Overlay by Taxonomic Level\n{full_taxonomy}',
+    plt.suptitle(f'Cross-Attention by Taxonomic Level (Averaged over 4 tokens)\n{full_taxonomy}',
                 fontsize=12, fontweight='bold')
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def create_simple_comparison(images_by_level: Dict[int, Image.Image],
+                            attentions_by_level: Dict[int, np.ndarray],
+                            full_taxonomy: str, save_path: str):
+    """Create a cleaner, publication-ready comparison figure."""
+    tax_parts = full_taxonomy.split()
+    num_levels = min(len(tax_parts), 7)
+    species_name = f"{tax_parts[-2]} {tax_parts[-1]}" if len(tax_parts) >= 2 else full_taxonomy
+
+    # Select key levels to show: Kingdom, Class, Family, Species
+    key_levels = [1, 3, 5, 7]
+    key_levels = [l for l in key_levels if l <= num_levels]
+
+    fig, axes = plt.subplots(2, len(key_levels), figsize=(4 * len(key_levels), 8))
+
+    for col, level in enumerate(key_levels):
+        # Row 1: Generated images
+        if level in images_by_level:
+            axes[0, col].imshow(images_by_level[level])
+        partial_tax = " ".join(tax_parts[:level])
+        axes[0, col].set_title(f'{TAXONOMIC_LEVELS[level-1]}\n{tax_parts[level-1]}', fontsize=11)
+        axes[0, col].axis('off')
+
+        # Row 2: Attention overlays
+        if level in attentions_by_level and attentions_by_level[level] is not None and level in images_by_level:
+            img = images_by_level[level]
+            attn = normalize_attention(attentions_by_level[level])
+            attn_resized = np.array(Image.fromarray((attn * 255).astype(np.uint8)).resize(
+                img.size, Image.BILINEAR)) / 255.0
+            cmap = cm.get_cmap('jet')
+            heatmap = cmap(attn_resized)[:, :, :3]
+            heatmap = (heatmap * 255).astype(np.uint8)
+            heatmap_img = Image.fromarray(heatmap)
+            blended = Image.blend(img.convert('RGB'), heatmap_img, 0.5)
+            axes[1, col].imshow(blended)
+        axes[1, col].set_title('Attention', fontsize=10)
+        axes[1, col].axis('off')
+
+    plt.suptitle(f'Taxonomic Level Comparison: {species_name}\n(Cross-attention averaged over 4 tokens)',
+                fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
 
 
@@ -626,16 +670,25 @@ def main():
             image.save(os.path.join(sample_dir, f"level_{level}_{TAXONOMIC_LEVELS[level-1]}.png"))
 
         # Create visualizations
+        # Main comparison (all levels)
         create_taxonomic_level_comparison(
             images_by_level, attentions_by_level, full_taxonomy,
             os.path.join(sample_dir, "level_comparison.png")
         )
 
+        # Simpler comparison (key levels only - good for paper)
+        create_simple_comparison(
+            images_by_level, attentions_by_level, full_taxonomy,
+            os.path.join(sample_dir, "level_comparison_simple.png")
+        )
+
+        # Statistics plot
         create_attention_evolution_plot(
             attentions_by_level, full_taxonomy,
             os.path.join(sample_dir, "attention_statistics.png")
         )
 
+        # Overlay grid
         create_heatmap_overlay_grid(
             images_by_level[num_levels], attentions_by_level, full_taxonomy,
             os.path.join(sample_dir, "attention_overlays.png")
