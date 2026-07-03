@@ -2,14 +2,14 @@
 
 #SBATCH -J tx+loc_proj
 #SBATCH --cpus-per-task=12
-#SBATCH --time=40:00:00 
+#SBATCH --time=11:00:00 
 #SBATCH --gres=gpu:4
 #SBATCH --partition=h200_normal_q
 #SBATCH --account=memtrack
 #SBATCH --output=/scratch/bio_diffusion/slurm_logs/%j-%x.out
 
 
-########## SBATCH --qos=tc_a100_normal_short
+#### SBATCH --qos=tc_a100_normal_short
 
 ### change 5-digit MASTER_PORT as you wish, slurm will raise Error if duplicated with others
 ### change WORLD_SIZE as gpus/node * num_nodes

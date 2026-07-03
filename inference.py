@@ -16,6 +16,7 @@ from ip_adapter import IPAdapter
 from tqdm import tqdm
 import json
 from transformers import CLIPTokenizer, CLIPTextModelWithProjection
+from sae_utils import load_sae, BioCLIPWithSAE
 
 
 # ---------- Utilities ----------
@@ -115,12 +116,15 @@ def parse_args():
     p.add_argument("--num_tokens", type=int, default=4, help="must match training")
     p.add_argument("--prompt", type=str, default=None, help="Prompt for image generation (optional).")
     p.add_argument("--taxonomic_prompt", action="store_true", help="If set, use taxonomic name as prompt.")
+    p.add_argument("--biocap_caption", action="store_true", help="If set, use BioCap caption as prompt.")
     p.add_argument("--levels", type=int, default=7, help="Taxonomic levels to use (1=kingdom,...7=species).")
     
 
     p.add_argument("--json_file", required=True, help="Path to JSON list of dicts.")
-    p.add_argument("--model_type", type=str, default="bioclip", choices=["bioclip", "taxabind", "location", "clip", "taxa_loc_seq_concat", "loc_taxa_seq_concat", "bioclip_clip"], help="Which model type was used during IP-Adapter training?")
+    p.add_argument("--model_type", type=str, default="bioclip", choices=["bioclip", "taxabind", "location", "clip", "taxa_loc_seq_concat", "loc_taxa_seq_concat", "bioclip_clip", "bioclip_sae", "biotrove"], help="Which model type was used during IP-Adapter training?")
     p.add_argument("--dataset", type=str, default="inat", choices=["inat", "fishnet"], help="Dataset type: 'inat' uses folder from image path, 'fishnet' uses taxonomic name")
+    p.add_argument("--sae_ckpt", type=str, default="/scratch/bio_diffusion/ip-adapter_runs/bioclip_sae/sae_model/sae.pt", help="Path to SAE checkpoint (only used when --model_type bioclip_sae)")
+    p.add_argument("--sae_alpha", type=float, default=0.5, help="Blending: 0=pure SAE, 1=pure BioCLIP, 0.5=half-half (only used when --model_type bioclip_sae)")
     return p.parse_args()
 
 
@@ -137,6 +141,15 @@ def main():
     # BioCLIP/TaxaBind models and tokenizers
     bioclip_model, _, _ = open_clip.create_model_and_transforms("hf-hub:imageomics/bioclip-2")
     bioclip_tok = open_clip.get_tokenizer("hf-hub:imageomics/bioclip-2")
+
+    # If using SAE, wrap BioCLIP so its encode_text() returns SAE-reconstructed embeddings.
+    # IPAdapter then sees it as a plain bioclip model (model_type='bioclip'), zero changes needed there.
+    if args.model_type == "bioclip_sae":
+        print(f"Loading SAE from {args.sae_ckpt} ...")
+        sae = load_sae(args.sae_ckpt, device="cpu")
+        print(f"SAE blending alpha={args.sae_alpha} (0=pure SAE, 1=pure BioCLIP)")
+        bioclip_model = BioCLIPWithSAE(bioclip_model, sae, alpha=args.sae_alpha)
+        args.model_type = "bioclip"  # treat as bioclip from here on
 
     config = PretrainedConfig.from_pretrained("MVRL/taxabind-config")
     taxabind = TaxaBind(config)
@@ -157,6 +170,9 @@ def main():
         tokenizer  = CLIPTokenizer.from_pretrained(clip_ckpt)
         clip_text_with_proj = CLIPTextModelWithProjection.from_pretrained(clip_ckpt).eval()
         bioclip_tokenizer = bioclip_tok
+    elif args.model_type == 'biotrove':
+        bioclip_model = open_clip.create_model("hf-hub:BGLab/BioTrove-CLIP", output_dict=True, require_pretrained=True)
+        tokenizer = open_clip.get_tokenizer("ViT-B-16")
 
     # Load JSON
     with open(args.json_file, "r") as f:
@@ -215,6 +231,7 @@ def main():
     for idx, entry in tqdm(enumerate(unique_items, start=1), total=len(unique_items)):
         taxa_name = entry["taxonomic_name"]
         location = torch.tensor([entry["latitude"], entry["longitude"]])
+        biocap_caption = entry["text"]
 
         if args.levels < 7:
             taxa_parts = taxa_name.split(" ")
@@ -232,7 +249,7 @@ def main():
             class_dir = class_dir_from_image_path(rel_img_path)
             save_dir = os.path.join(args.out_dir, class_dir)
 
-        if args.model_type == "bioclip" or args.model_type == "taxabind":
+        if args.model_type == "bioclip" or args.model_type == "taxabind" or args.model_type == "biotrove":
             tokens = tokenizer(taxa_name).to(device)
         elif args.model_type == "location":
             tokens = location.unsqueeze(0).to(device)
@@ -264,6 +281,8 @@ def main():
         # Generate images
         if args.taxonomic_prompt:
             prompt = 'best quality, high quality photo of ' + taxa_name
+        elif args.biocap_caption:
+            prompt = 'best quality, high quality photo of ' + biocap_caption
         else:
             prompt = args.prompt
         

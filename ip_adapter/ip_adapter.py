@@ -65,7 +65,7 @@ class MLPProjModel(torch.nn.Module):
 
 class IPAdapter:
     # def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4, model_type='clip', bioclip=None, taxabind=None, location_encoder=None, loc_proj_ckpt: Optional[str] = None):
-    def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4, model_type='image', bioclip=None, taxabind=None, location_encoder=None):
+    def __init__(self, sd_pipe, image_encoder_path, ip_ckpt, device, num_tokens=4, model_type='image', bioclip=None, taxabind=None, location_encoder=None, second_encoder=None):
 
         self.device = device
         self.image_encoder_path = image_encoder_path
@@ -75,6 +75,8 @@ class IPAdapter:
         self.bioclip = bioclip.to(self.device, dtype=torch.float16)
         self.taxabind = taxabind.to(self.device, dtype=torch.float16)
         self.location_encoder = location_encoder.to(self.device)
+        if second_encoder is not None:
+            self.second_encoder = second_encoder.to(self.device)
 
         self.pipe = sd_pipe.to(self.device)
         self.set_ip_adapter()
@@ -84,12 +86,14 @@ class IPAdapter:
             self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(self.image_encoder_path).to(
                 self.device, dtype=torch.float16
             )
-        elif model_type == 'bioclip' or model_type == 'clip':
+        elif model_type == 'bioclip' or model_type == 'clip' or model_type == 'biotrove':
             self.image_encoder = self.bioclip
         elif model_type == 'taxabind':
             self.image_encoder = self.taxabind
         elif model_type == 'location':
             self.image_encoder = self.location_encoder
+        elif model_type == "taxa_loc_seq_concat" or model_type == "loc_taxa_seq_concat" or model_type == "taxa_loc_channel_concat" or model_type == "loc_taxa_channel_concat":
+            self.image_encoder = self.taxabind
         elif self.model_type == 'bioclip_clip':
             self.image_encoder = self.bioclip
 
@@ -109,8 +113,14 @@ class IPAdapter:
             image_encoder_dim = 512
         elif self.model_type == "location":
             image_encoder_dim = 512
+        elif self.model_type == "taxa_loc_seq_concat" or self.model_type == "loc_taxa_seq_concat":
+            image_encoder_dim = 1024
+        elif self.model_type == "taxa_loc_channel_concat" or self.model_type == "loc_taxa_channel_concat":
+            image_encoder_dim = 512
         elif self.model_type == 'bioclip_clip':
             image_encoder_dim = 768
+        elif self.model_type == 'biotrove':
+            image_encoder_dim = 512
 
         image_proj_model = ImageProjModel(
             cross_attention_dim=self.pipe.unet.config.cross_attention_dim,
@@ -177,7 +187,7 @@ class IPAdapter:
             image_prompt_embeds = self.image_proj_model(clip_image_embeds)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
 
-        elif self.model_type == 'bioclip':
+        elif self.model_type == 'bioclip' or self.model_type == 'biotrove':
             text_emb = self.image_encoder.encode_text(pil_image)
             image_prompt_embeds = self.image_proj_model(text_emb)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(text_emb))
@@ -193,11 +203,25 @@ class IPAdapter:
             text_emb = self.image_encoder(pil_image)[0]
             image_prompt_embeds = self.image_proj_model(text_emb)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(text_emb))
+        elif self.model_type == 'taxa_loc_seq_concat' or self.model_type == 'loc_taxa_seq_concat':
+            text_emb = self.image_encoder.encode_text(pil_image[0])
+            location_emb = self.location_encoder(pil_image[1]).to(dtype=torch.float16)
+            if self.model_type == "loc_taxa_seq_concat":
+                concat_emb = torch.cat([location_emb, text_emb], dim=1)  # [B, 1024]
+            elif self.model_type == "taxa_loc_seq_concat":
+                concat_emb = torch.cat([text_emb, location_emb], dim=1)  # [B, 1024]
+            # concat_emb = torch.cat([text_emb, location_emb], dim=-1)
+            image_prompt_embeds = self.image_proj_model(concat_emb)
+            uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(concat_emb))
         elif self.model_type == 'bioclip_clip':
             # pil_image -> (bioclip_tokens, clip_tokens) 
+            # bioclip part
+            # text_emb = self.image_encoder.encode_text(pil_image)[0]
             text_emb_bioclip = self.bioclip.encode_text(pil_image[0])
             text_emb_clip = self.taxabind(pil_image[1])[0]
             text_emb = text_emb_bioclip + text_emb_clip
+            # breakpoint()
+
             image_prompt_embeds = self.image_proj_model(text_emb)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(text_emb))
 
@@ -225,6 +249,7 @@ class IPAdapter:
         self.set_scale(scale)
 
         if pil_image is not None:
+            # if self.model_type == 'taxa_loc_seq_concat' or self.model_type == 'loc_taxa_seq_concat' or self.model_type == 'bioclip_clip':
             if self.model_type in ['taxa_loc_seq_concat', 'loc_taxa_seq_concat', 'bioclip_clip']:
                 num_prompts = 1
             else:

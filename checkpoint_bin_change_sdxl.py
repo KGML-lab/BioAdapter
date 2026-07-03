@@ -3,8 +3,8 @@ from safetensors.torch import load_file, save_file
 from diffusers import UNet2DConditionModel
 
 # --- EDIT THESE ---
-BASE_MODEL = "runwayml/stable-diffusion-v1-5"       # same base you trained with
-CKPT_DIR   = "/scratch/bio_diffusion/new_experiments/biocap_taxaadpter/biocap_bioclip_inat_birds_minus_species_2gpus_23hrs/checkpoint-58000"  # where your .bin/.safetensors are
+BASE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"  # SDXL base model
+CKPT_DIR   = "/scratch/bio_diffusion/ip-adapter_runs/model_runs/supplementary/sdxl_BioCLIP_birds_subset_old_gpus2_1024_24hrs_batch_12/checkpoint-65000"  # EDIT THIS
 IN_SFT     = os.path.join(CKPT_DIR, "model.safetensors")
 OUT_BIN    = os.path.join(CKPT_DIR, "ip_adapter.bin")
 OUT_SFT    = os.path.join(CKPT_DIR, "ip_adapter.safetensors")
@@ -18,7 +18,9 @@ image_proj_sd = {k.replace("image_proj_model.", "", 1): v
 print("projector param tensors:", len(image_proj_sd))  # expect 4 (proj/norm {weight,bias})
 
 # Build a reference UNet to get the exact attn processor order (so indices match)
+print(f"Loading reference UNet from {BASE_MODEL}...")
 unet_ref = UNet2DConditionModel.from_pretrained(BASE_MODEL, subfolder="unet")
+print(f"UNet cross_attention_dim: {unet_ref.config.cross_attention_dim}")  # Should be 2048 for SDXL
 names_ordered = list(unet_ref.attn_processors.keys())
 bases = [n[:-len(".processor")] if n.endswith(".processor") else n for n in names_ordered]
 

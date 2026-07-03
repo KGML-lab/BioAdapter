@@ -169,6 +169,8 @@ class IPAttnProcessor(nn.Module):
         self.attn_map = ip_attention_probs
         ip_hidden_states = torch.bmm(ip_attention_probs, ip_value)
         ip_hidden_states = attn.batch_to_head_dim(ip_hidden_states)
+        with torch.no_grad():
+            self.ip_contrib_map = torch.linalg.vector_norm(self.scale * ip_hidden_states, dim=-1)
 
         hidden_states = hidden_states + self.scale * ip_hidden_states
 
@@ -393,6 +395,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         ip_hidden_states = ip_hidden_states.to(query.dtype)
+        with torch.no_grad():
+            self.ip_contrib_map = torch.linalg.vector_norm(self.scale * ip_hidden_states, dim=-1)
 
         hidden_states = hidden_states + self.scale * ip_hidden_states
 
